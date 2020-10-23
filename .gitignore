@@ -2,6 +2,12 @@
 /src/user/exec.skel.h
 /src/kern/vmlinux.h
 
+GPATH
+GRTAGS
+GTAGS
+
+build/
+
 *.o
 *.a
 *.so
