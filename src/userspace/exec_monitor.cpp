@@ -28,6 +28,7 @@ static int process_sample(void *ctx, void *data, size_t len)
 
 	struct process_info *s = (process_info*)data;
 	printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
+	printf("\t %d bytes in args: %s\n", strlen(s->args), s->args);
 	fflush(stdout);
 	return 0;
 }

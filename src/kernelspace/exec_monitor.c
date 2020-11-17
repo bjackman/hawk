@@ -29,9 +29,12 @@ long ringbuffer_flags = 0;
 SEC("lsm/bprm_committed_creds")
 void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 {
+	int err;
 	long pid_tgid;
 	struct process_info *process;
 	struct task_struct *current_task;
+	const char msg[] = "bpf_probe_read returned %d\n";
+
 
 	// Reserve space on the ringbuffer for the sample
 	process = bpf_ringbuf_reserve(&ringbuf, sizeof(*process), ringbuffer_flags);
@@ -49,6 +52,10 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 
 	// Get the executable name
 	bpf_get_current_comm(&process->name, sizeof(process->name));
+
+	err = bpf_probe_read_user(&process->args, sizeof(process->args),
+				  (void *)bprm->mm->arg_start);
+	bpf_trace_printk(msg, sizeof(msg), err);
 
 	bpf_ringbuf_submit(process, ringbuffer_flags);
 }
