@@ -42,6 +42,8 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 	if (!process)
 		return;
 
+	process->type = PROCESS_INFO;
+
 	// Get information about the current process
 	pid_tgid = bpf_get_current_pid_tgid();
 	process->header.pid = pid_tgid;
@@ -56,14 +58,30 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 
 	bpf_ringbuf_submit(process, ringbuffer_flags);
 
-	args = bpf_ringbuf_reserve(&ringbuf, sizeof(process->args_chunk) + 0x1000, ringbuffer_flags);
-	if (!args)
+	unsigned int alloc_size = sizeof(process->args_chunk) + 100;
+	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
+	if (!args) {
+		const char mosg[] = "alloc of %d bytes failed";
+		bpf_trace_printk(mosg, sizeof(mosg), alloc_size);
 		return;
+	}
+
+	const char misg[] = "alloc of %d bytes succed";
+	bpf_trace_printk(misg, sizeof(misg), alloc_size);
+
+	args->type = ARGS;
 
 	unsigned int args_size = bprm->vma->vm_end - bprm->vma->vm_start;
-	unsigned int alloc_size = min(args_size, 0x500ull);
-	err = bpf_probe_read_user(&args->args_chunk.args, alloc_size, (void *)bprm->p);
-	args->args_chunk.size = alloc_size;
+	unsigned int read_size = min(args_size, 16ull);
+	err = bpf_probe_read_user(&args->args_chunk.args, read_size, (void *)bprm->p);
+	if (err) {
+		const char mosg[] = "read of %d bytes failed: %d";
+		bpf_trace_printk(mosg, sizeof(mosg), read_size, err);
+		bpf_ringbuf_discard(args, ringbuffer_flags);
+		return;
+	}
+
+	args->args_chunk.size = read_size;
 	bpf_ringbuf_submit(args, ringbuffer_flags);
 }
 

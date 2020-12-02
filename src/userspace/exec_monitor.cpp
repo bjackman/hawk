@@ -48,20 +48,20 @@ static int process_sample(void *ctx, void *data, size_t len)
 {
 	struct process_info *s = NULL;
 
-	if(len < sizeof(struct exec_monitor_entry)) {
-		return -1;
-	}
-
 	struct exec_monitor_entry *e = (exec_monitor_entry*)data;
 	switch (e->type) {
 	case PROCESS_INFO:
+		if (len < sizeof(struct exec_monitor_entry)) {
+			return -1;
+		}
+
 		s = &e->header;
 		printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
 		fflush(stdout);
 		return 0;
-	default:;
-		printf("Bad type %d", e->type);
-		return 1;
+	default:
+		printf("Bad type %d\n", e->type);
+		return 0;
 	}
 }
 
