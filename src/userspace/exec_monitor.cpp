@@ -51,13 +51,21 @@ static int process_sample(void *ctx, void *data, size_t len)
 	struct exec_monitor_entry *e = (exec_monitor_entry*)data;
 	switch (e->type) {
 	case PROCESS_INFO:
-		if (len < sizeof(struct exec_monitor_entry)) {
+		if (len < sizeof(*e)) {
+			printf("Invalid len %d", len);
 			return -1;
 		}
 
 		s = &e->header;
 		printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
 		fflush(stdout);
+		return 0;
+	case ARGS:
+		if (len < sizeof(e->args_chunk) + e->args_chunk.size) {
+			printf("Invalid len %d", len);
+			return -1;
+		}
+		hexdump(e->args_chunk.args, e->args_chunk.size);
 		return 0;
 	default:
 		printf("Bad type %d\n", e->type);
