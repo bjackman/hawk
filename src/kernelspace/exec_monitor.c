@@ -20,6 +20,8 @@
 #include "process_info.hpp"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 #define printk(fmt, ...)						\
 	do {								\
 		const char __fmt[] = fmt;				\
@@ -72,30 +74,36 @@ static int output_argv_envv(struct linux_binprm *bprm)
 	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 	struct exec_monitor_entry *args;
 
-	// TODO this is bogus, we're allocating more bytes than we need
-	unsigned int alloc_size = sizeof(*args) + CHUNK_SIZE;
-	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
-	if (!args) {
-		printk("alloc of %d bytes failed", alloc_size);
-		return -1;
-	}
-
-	args->type = ARGS;
-
 	// vm_start and vm_end are the beginning and end of the _pages_ where
 	// the argv and env live. p is the pointer to the beginning of the
 	// buffer. We want to read from P up to vm_end.
 	unsigned int args_size = bprm->vma->vm_end - bprm->vma->vm_start - (bprm->p % PAGE_SIZE);
-	unsigned int read_size = min(args_size, CHUNK_SIZE);
-	err = bpf_probe_read_user(&args->args_chunk.args, read_size, (void *)bprm->p);
-	if (err) {
-		printk("read of %d bytes failed: %d", read_size, err);
-		bpf_ringbuf_discard(args, ringbuffer_flags);
-		return -1;
-	}
+	unsigned int offset = 0;
+	for (int i = 0; i < 4 && offset < args_size; i++) {
+		// TODO this is bogus, we're allocating more bytes than we need
+		unsigned int alloc_size = sizeof(*args) + CHUNK_SIZE;
+		args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
+		if (!args) {
+			printk("alloc of %d bytes failed", alloc_size);
+			return -1;
+		}
+		args->type = ARGS;
 
-	args->args_chunk.size = read_size;
-	bpf_ringbuf_submit(args, ringbuffer_flags);
+		int read_size = min(args_size - offset, CHUNK_SIZE);
+		err = bpf_probe_read_user(&args->args_chunk.args,
+					  read_size
+					  (void *)((char *)bprm->p + offset));
+		if (err) {
+			printk("read of %d bytes failed: %d", read_size, err);
+			bpf_ringbuf_discard(args, ringbuffer_flags);
+			return -1;
+		}
+
+		args->args_chunk.size = read_size;
+		bpf_ringbuf_submit(args, ringbuffer_flags);
+
+		offset += read_size;
+	}
 
 	return 0;
 }
