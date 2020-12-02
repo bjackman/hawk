@@ -58,22 +58,18 @@ static int output_header(struct linux_binprm *bprm)
 	return 0;
 }
 
-SEC("lsm/bprm_committed_creds")
-void BPF_PROG(exec_audit, struct linux_binprm *bprm)
+static int output_args(struct linux_binprm *bprm)
 {
 	int err;
 	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 	struct exec_monitor_entry *args;
-
-	if (output_header(bprm))
-		return;
 
 	unsigned int alloc_size = sizeof(args->args_chunk) + 100;
 	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
 	if (!args) {
 		const char mosg[] = "alloc of %d bytes failed";
 		bpf_trace_printk(mosg, sizeof(mosg), alloc_size);
-		return;
+		return -1;
 	}
 
 	const char misg[] = "alloc of %d bytes succed";
@@ -88,11 +84,21 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 		const char mosg[] = "read of %d bytes failed: %d";
 		bpf_trace_printk(mosg, sizeof(mosg), read_size, err);
 		bpf_ringbuf_discard(args, ringbuffer_flags);
-		return;
+		return -1;
 	}
 
 	args->args_chunk.size = read_size;
 	bpf_ringbuf_submit(args, ringbuffer_flags);
+
+	return 0;
+}
+
+SEC("lsm/bprm_committed_creds")
+void BPF_PROG(exec_audit, struct linux_binprm *bprm)
+{
+	if (output_header(bprm))
+		return;
+	output_args(bprm);
 }
 
 char _license[] SEC("license") = "GPL";
