@@ -25,6 +25,7 @@ static void hexdump(const char *buf, int size)
 	int row_length = 16;;
 
 	for (int i = 0; i <= (size / row_length); i++) {
+		printf("%03d: ", i * row_length);
 		for (int j = 0; j < row_length; j++) {
 			int offset = i * row_length + j;
 			if (offset >= size)

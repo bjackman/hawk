@@ -58,13 +58,17 @@ static int output_header(struct linux_binprm *bprm)
 	return 0;
 }
 
+#define CHUNK_SIZE 4096ull
+#define PAGE_SIZE 4096
+
 static int output_args(struct linux_binprm *bprm)
 {
 	int err;
 	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 	struct exec_monitor_entry *args;
 
-	unsigned int alloc_size = sizeof(args->args_chunk) + 100;
+	// TODO this is bogus, we're allocating more bytes than we need
+	unsigned int alloc_size = sizeof(*args) + CHUNK_SIZE;
 	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
 	if (!args) {
 		const char mosg[] = "alloc of %d bytes failed";
@@ -77,8 +81,11 @@ static int output_args(struct linux_binprm *bprm)
 
 	args->type = ARGS;
 
-	unsigned int args_size = bprm->vma->vm_end - bprm->vma->vm_start;
-	unsigned int read_size = min(args_size, 16ull);
+	// vm_start and vm_end are the beginning and end of the _pages_ where
+	// the argv and env live. p is the pointer to the beginning of the
+	// buffer. We want to read from P up to vm_end.
+	unsigned int args_size = bprm->vma->vm_end - bprm->vma->vm_start - (bprm->p % PAGE_SIZE);
+	unsigned int read_size = min(args_size, CHUNK_SIZE);
 	err = bpf_probe_read_user(&args->args_chunk.args, read_size, (void *)bprm->p);
 	if (err) {
 		const char mosg[] = "read of %d bytes failed: %d";
