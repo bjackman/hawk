@@ -8,6 +8,7 @@ struct process_info {
 	int pid;
 	int tgid;
 	char name[PATH_MAX];
+	int args_size;
 	char args[PATH_MAX];
 };
 

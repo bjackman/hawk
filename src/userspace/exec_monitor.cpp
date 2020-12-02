@@ -20,6 +20,30 @@
 #include "process_info.hpp"
 #include "exec_monitor.hpp"
 
+static void hexdump(const char *buf, int size)
+{
+	int row_length = 16;;
+
+	for (int i = 0; i <= (size / row_length); i++) {
+		for (int j = 0; j < row_length; j++) {
+			int offset = i * row_length + j;
+			if (offset >= size)
+				printf("   ");
+			else
+				printf("%02x ", buf[offset]);
+		}
+		printf("| ");
+		for (int j = 0; j < row_length; j++) {
+			int offset = i * row_length + j;
+			if (offset >= size)
+				printf("   ");
+			else
+				printf("%c ", buf[offset]);
+		}
+		printf("\n");
+	}
+}
+
 static int process_sample(void *ctx, void *data, size_t len)
 {
 	if(len < sizeof(struct process_info)) {
@@ -28,7 +52,8 @@ static int process_sample(void *ctx, void *data, size_t len)
 
 	struct process_info *s = (process_info*)data;
 	printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
-	printf("\t %d bytes in args: %s\n", strlen(s->args), s->args);
+	printf("\t %d bytes in args:\n", s->args_size);
+	hexdump(s->args, s->args_size);
 	fflush(stdout);
 	return 0;
 }

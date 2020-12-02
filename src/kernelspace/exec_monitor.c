@@ -33,8 +33,7 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 	long pid_tgid;
 	struct process_info *process;
 	struct task_struct *current_task;
-	const char msg[] = "bpf_probe_read returned %d\n";
-
+	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 
 	// Reserve space on the ringbuffer for the sample
 	process = bpf_ringbuf_reserve(&ringbuf, sizeof(*process), ringbuffer_flags);
@@ -45,6 +44,7 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 	pid_tgid = bpf_get_current_pid_tgid();
 	process->pid = pid_tgid;
 	process->tgid = pid_tgid >> 32;
+	process->args_size = bprm->vma->vm_end - bprm->vma->vm_start;
 
 	// Get the parent pid
 	current_task = (struct task_struct *)bpf_get_current_task();
@@ -53,9 +53,8 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 	// Get the executable name
 	bpf_get_current_comm(&process->name, sizeof(process->name));
 
-	err = bpf_probe_read_user(&process->args, sizeof(process->args),
-				  (void *)bprm->mm->arg_start);
-	bpf_trace_printk(msg, sizeof(msg), err);
+	err = bpf_probe_read_user(&process->args, process->args_size & 0xFFF, (void *)bprm->p);
+	bpf_trace_printk(msg, sizeof(msg), err, process->args_size, (void *)bprm->p);
 
 	bpf_ringbuf_submit(process, ringbuffer_flags);
 }
