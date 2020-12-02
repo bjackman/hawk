@@ -20,6 +20,11 @@
 #include "process_info.hpp"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
+#define printk(fmt, ...)						\
+	do {								\
+		const char __fmt[] = fmt;				\
+		bpf_trace_printk(__fmt, sizeof(__fmt), __VA_ARGS__);	\
+	} while (0)
 
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
@@ -61,7 +66,7 @@ static int output_header(struct linux_binprm *bprm)
 #define CHUNK_SIZE 4096ull
 #define PAGE_SIZE 4096
 
-static int output_args(struct linux_binprm *bprm)
+static int output_argv_envv(struct linux_binprm *bprm)
 {
 	int err;
 	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
@@ -71,13 +76,9 @@ static int output_args(struct linux_binprm *bprm)
 	unsigned int alloc_size = sizeof(*args) + CHUNK_SIZE;
 	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
 	if (!args) {
-		const char mosg[] = "alloc of %d bytes failed";
-		bpf_trace_printk(mosg, sizeof(mosg), alloc_size);
+		printk("alloc of %d bytes failed", alloc_size);
 		return -1;
 	}
-
-	const char misg[] = "alloc of %d bytes succed";
-	bpf_trace_printk(misg, sizeof(misg), alloc_size);
 
 	args->type = ARGS;
 
@@ -88,8 +89,7 @@ static int output_args(struct linux_binprm *bprm)
 	unsigned int read_size = min(args_size, CHUNK_SIZE);
 	err = bpf_probe_read_user(&args->args_chunk.args, read_size, (void *)bprm->p);
 	if (err) {
-		const char mosg[] = "read of %d bytes failed: %d";
-		bpf_trace_printk(mosg, sizeof(mosg), read_size, err);
+		printk("read of %d bytes failed: %d", read_size, err);
 		bpf_ringbuf_discard(args, ringbuffer_flags);
 		return -1;
 	}
@@ -105,7 +105,7 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 {
 	if (output_header(bprm))
 		return;
-	output_args(bprm);
+	output_argv_envv(bprm);
 }
 
 char _license[] SEC("license") = "GPL";
