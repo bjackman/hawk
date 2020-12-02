@@ -28,19 +28,16 @@ struct {
 
 long ringbuffer_flags = 0;
 
-SEC("lsm/bprm_committed_creds")
-void BPF_PROG(exec_audit, struct linux_binprm *bprm)
+static int output_header(struct linux_binprm *bprm)
 {
-	int err;
 	long pid_tgid;
-	struct exec_monitor_entry *process, *args;
+	struct exec_monitor_entry *process;
 	struct task_struct *current_task;
-	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 
 	// Reserve space on the ringbuffer for the sample
 	process = bpf_ringbuf_reserve(&ringbuf, sizeof(*process), ringbuffer_flags);
 	if (!process)
-		return;
+		return -1;
 
 	process->type = PROCESS_INFO;
 
@@ -58,7 +55,20 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 
 	bpf_ringbuf_submit(process, ringbuffer_flags);
 
-	unsigned int alloc_size = sizeof(process->args_chunk) + 100;
+	return 0;
+}
+
+SEC("lsm/bprm_committed_creds")
+void BPF_PROG(exec_audit, struct linux_binprm *bprm)
+{
+	int err;
+	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
+	struct exec_monitor_entry *args;
+
+	if (output_header(bprm))
+		return;
+
+	unsigned int alloc_size = sizeof(args->args_chunk) + 100;
 	args = bpf_ringbuf_reserve(&ringbuf, alloc_size, ringbuffer_flags);
 	if (!args) {
 		const char mosg[] = "alloc of %d bytes failed";
