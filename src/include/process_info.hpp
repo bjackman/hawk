@@ -8,8 +8,22 @@ struct process_info {
 	int pid;
 	int tgid;
 	char name[PATH_MAX];
-	int args_size;
-	char args[PATH_MAX];
+};
+
+enum exec_monitor_entry_type {
+	PROCESS_INFO,
+	ARGS,
+};
+
+struct exec_monitor_entry {
+	enum exec_monitor_entry_type type;
+	union {
+		struct process_info header;
+		struct {
+			int size;
+			char args[0];
+		} args_chunk;
+	};
 };
 
 #endif

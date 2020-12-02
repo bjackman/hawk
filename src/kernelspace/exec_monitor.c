@@ -19,6 +19,8 @@
 #include <bpf/bpf_core_read.h>
 #include "process_info.hpp"
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 struct {
 	__uint(type, BPF_MAP_TYPE_RINGBUF);
 	__uint(max_entries, 1 << 24);
@@ -31,7 +33,7 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 {
 	int err;
 	long pid_tgid;
-	struct process_info *process;
+	struct exec_monitor_entry *process, *args;
 	struct task_struct *current_task;
 	const char msg[] = "bpf_probe_read returned %d for size %d (%p)\n";
 
@@ -42,21 +44,27 @@ void BPF_PROG(exec_audit, struct linux_binprm *bprm)
 
 	// Get information about the current process
 	pid_tgid = bpf_get_current_pid_tgid();
-	process->pid = pid_tgid;
-	process->tgid = pid_tgid >> 32;
-	process->args_size = bprm->vma->vm_end - bprm->vma->vm_start;
+	process->header.pid = pid_tgid;
+	process->header.tgid = pid_tgid >> 32;
 
 	// Get the parent pid
 	current_task = (struct task_struct *)bpf_get_current_task();
-	process->ppid = BPF_CORE_READ(current_task, real_parent, pid);
+	process->header.ppid = BPF_CORE_READ(current_task, real_parent, pid);
 
 	// Get the executable name
-	bpf_get_current_comm(&process->name, sizeof(process->name));
-
-	err = bpf_probe_read_user(&process->args, process->args_size & 0xFFF, (void *)bprm->p);
-	bpf_trace_printk(msg, sizeof(msg), err, process->args_size, (void *)bprm->p);
+	bpf_get_current_comm(&process->header.name, sizeof(process->header.name));
 
 	bpf_ringbuf_submit(process, ringbuffer_flags);
+
+	args = bpf_ringbuf_reserve(&ringbuf, sizeof(process->args_chunk) + 0x1000, ringbuffer_flags);
+	if (!args)
+		return;
+
+	unsigned int args_size = bprm->vma->vm_end - bprm->vma->vm_start;
+	unsigned int alloc_size = min(args_size, 0x500ull);
+	err = bpf_probe_read_user(&args->args_chunk.args, alloc_size, (void *)bprm->p);
+	args->args_chunk.size = alloc_size;
+	bpf_ringbuf_submit(args, ringbuffer_flags);
 }
 
 char _license[] SEC("license") = "GPL";

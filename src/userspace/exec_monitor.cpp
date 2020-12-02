@@ -46,16 +46,23 @@ static void hexdump(const char *buf, int size)
 
 static int process_sample(void *ctx, void *data, size_t len)
 {
-	if(len < sizeof(struct process_info)) {
+	struct process_info *s = NULL;
+
+	if(len < sizeof(struct exec_monitor_entry)) {
 		return -1;
 	}
 
-	struct process_info *s = (process_info*)data;
-	printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
-	printf("\t %d bytes in args:\n", s->args_size);
-	hexdump(s->args, s->args_size);
-	fflush(stdout);
-	return 0;
+	struct exec_monitor_entry *e = (exec_monitor_entry*)data;
+	switch (e->type) {
+	case PROCESS_INFO:
+		s = &e->header;
+		printf("%d\t%d\t%d\t%s\n", s->ppid, s->pid, s->tgid, s->name);
+		fflush(stdout);
+		return 0;
+	default:;
+		printf("Bad type %d", e->type);
+		return 1;
+	}
 }
 
 ExecMonitor::ExecMonitor(Config config)
